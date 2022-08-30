@@ -18,7 +18,6 @@ contract AutostakeToken is ERC20, Ownable {
     uint256 private constant TXFEES = 1; // 1%
     uint256 private _totalSupply;
     address private txFeeAddress;
-    address private _owner;
     mapping(address => uint256) private _balanceOf;
 
     struct RewardsPeriod {
@@ -50,7 +49,6 @@ contract AutostakeToken is ERC20, Ownable {
         address _txFeeAddress
     ) ERC20(name, symbol) {
         txFeeAddress = _txFeeAddress;
-        _owner = owner;
         _mint(owner, 1500000000 * 10**18);
     }
 
