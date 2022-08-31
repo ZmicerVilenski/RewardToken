@@ -15,32 +15,32 @@ contract AutostakeToken is ERC20, Ownable {
     );
     event Claimed(address receiver, uint256 claimed);
 
-    uint256 private constant TXFEES = 1; // 1%
+    uint256 private constant TXFEES = 1; // 1% transaction fee
     uint256 private _totalSupply;
     address private txFeeAddress;
     mapping(address => uint256) private _balanceOf;
 
     struct RewardsPeriod {
-        uint32 start; // Start time for the current rewardsToken schedule
-        uint32 end; // End time for the current rewardsToken schedule
+        uint32 start;
+        uint32 end;
     }
 
     struct RewardsPerToken {
-        uint128 accumulated; // Accumulated rewards per token for the period, scaled up by 1e18
-        uint32 lastUpdated; // Last time the rewards per token accumulator was updated
-        uint96 rate; // Wei rewarded per second among all token holders
+        uint128 accumulated;
+        uint32 lastUpdated;
+        uint96 rate;
     }
 
     struct UserRewards {
-        uint128 accumulated; // Accumulated rewards for the user until the checkpoint
-        uint128 checkpoint; // RewardsPerToken the last time the user rewards were updated
+        uint128 accumulated;
+        uint128 checkpoint;
     }
 
-    ERC20 public rewardsToken; // Token used as rewards
-    RewardsPeriod public rewardsPeriod; // Period in which rewards are accumulated by users
+    ERC20 public rewardsToken;
+    RewardsPeriod public rewardsPeriod;
 
-    RewardsPerToken public rewardsPerToken; // Accumulator to track rewards per token
-    mapping(address => UserRewards) public rewards; // Rewards accumulated by users
+    RewardsPerToken public rewardsPerToken;
+    mapping(address => UserRewards) public rewards;
 
     constructor(
         string memory name,
@@ -52,32 +52,49 @@ contract AutostakeToken is ERC20, Ownable {
         _mint(owner, 1500000000 * 10**18);
     }
 
-    /// @dev Safely cast an uint256 to an u32
+    /**
+     * @notice Safely cast an uint256 to an u32
+     * @param x convertible number
+     */
     function u32(uint256 x) internal pure returns (uint32 y) {
         require(x <= type(uint32).max, "Cast overflow");
         y = uint32(x);
     }
 
-    /// @dev Safely cast an uint256 to an uint128
+    /**
+     * @notice Safely cast an uint256 to an uint128
+     * @param x convertible number
+     */
     function u128(uint256 x) internal pure returns (uint128 y) {
         require(x <= type(uint128).max, "Cast overflow");
         y = uint128(x);
     }
 
-    /// @dev Return the earliest of two timestamps
+    /**
+     * @notice Return the earliest of two timestamps
+     * @param x timestamp 1
+     * @param y timestamp 1
+     */
     function earliest(uint32 x, uint32 y) internal pure returns (uint32 z) {
         z = (x < y) ? x : y;
     }
 
-    /// @dev Set a rewards token.
-    /// @notice Careful, this can only be done once.
+    /**
+     * @notice Set a rewards token. Careful, this can only be done once.
+     * @param rewardsToken_ reward token
+     */
     function setRewardsToken(ERC20 rewardsToken_) external onlyOwner {
         require(rewardsToken == ERC20(address(0)), "Rewards token already set");
         rewardsToken = rewardsToken_;
         emit RewardsTokenSet(rewardsToken_);
     }
 
-    /// @dev Set a rewards schedule
+    /**
+     * @notice Set a rewards schedule
+     * @param start timestamp of starting date of reward program
+     * @param end timestamp of ending date of reward program
+     * @param rate reward in wei per second
+     */
     function setRewards(
         uint32 start,
         uint32 end,
@@ -85,7 +102,6 @@ contract AutostakeToken is ERC20, Ownable {
     ) external onlyOwner {
         require(start <= end, "Incorrect input");
         require(rewardsToken != IERC20(address(0)), "Rewards token not set");
-        // A new rewards program can be set if one is not running
         require(
             u32(block.timestamp) < rewardsPeriod.start ||
                 u32(block.timestamp) > rewardsPeriod.end,
@@ -99,32 +115,33 @@ contract AutostakeToken is ERC20, Ownable {
         emit RewardsSet(start, end, rate);
     }
 
-    /// @dev Update the rewards per token accumulator.
-    /// @notice Needs to be called on each liquidity event
+    /**
+     * @notice Update the rewards per token accumulator. Needs to be called on each liquidity event
+     */
     function _updateRewardsPerToken() internal {
         RewardsPerToken memory rewardsPerToken_ = rewardsPerToken;
         RewardsPeriod memory rewardsPeriod_ = rewardsPeriod;
         uint256 totalSupply_ = _totalSupply;
         if (u32(block.timestamp) < rewardsPeriod_.start) return;
         uint32 end = earliest(u32(block.timestamp), rewardsPeriod_.end);
-        uint256 unaccountedTime = end - rewardsPerToken_.lastUpdated; // Cast to uint256 to avoid overflows later on
-        if (unaccountedTime == 0) return; // We skip the storage changes if already updated in the same block
-        // Calculate and update the new value of the accumulator. unaccountedTime casts it into uint256, which is desired.
-        // If the first mint happens mid-program, we don't update the accumulator, no one gets the rewards for that period.
+        uint256 unaccountedTime = end - rewardsPerToken_.lastUpdated;
+        if (unaccountedTime == 0) return;
         if (totalSupply_ != 0)
             rewardsPerToken_.accumulated = u128(
                 (rewardsPerToken_.accumulated +
                     (1e18 * unaccountedTime * rewardsPerToken_.rate) /
                     totalSupply_)
-            ); // The rewards per token are scaled up for precision
+            );
         rewardsPerToken_.lastUpdated = end;
         rewardsPerToken = rewardsPerToken_;
 
         emit RewardsPerTokenUpdated(rewardsPerToken_.accumulated);
     }
 
-    /// @dev Accumulate rewards for an user.
-    /// @notice Needs to be called on each liquidity event, or when user balances change.
+    /**
+     * @notice Accumulate rewards for an user. Needs to be called on each liquidity event, or when user balances change.
+     * @param user address of holder
+     */
     function _updateUserRewards(address user) internal returns (uint128) {
         UserRewards memory userRewards_ = rewards[user];
         RewardsPerToken memory rewardsPerToken_ = rewardsPerToken;
@@ -133,7 +150,7 @@ contract AutostakeToken is ERC20, Ownable {
                 (_balanceOf[user] *
                     (rewardsPerToken_.accumulated - userRewards_.checkpoint)) /
                 1e18)
-        ); // Must scale down the rewards by the precision factor
+        );
         userRewards_.checkpoint = rewardsPerToken_.accumulated;
         rewards[user] = userRewards_;
         emit UserRewardsUpdated(
@@ -145,7 +162,9 @@ contract AutostakeToken is ERC20, Ownable {
         return userRewards_.accumulated;
     }
 
-    /// @dev Transfer tokens, after updating rewards for source and destination.
+    /**
+     * @notice ransfer tokens, after updating rewards for source and destination.
+     */
     function _transfer(
         address src,
         address dst,
@@ -162,11 +181,14 @@ contract AutostakeToken is ERC20, Ownable {
         super._transfer(src, dst, amount);
     }
 
-    /// @dev Claim all rewards from caller into a given address
+    /**
+     * @notice Claim all rewards from caller into a given address
+     * @param to address of holder
+     */
     function claim(address to) external returns (uint256 claiming) {
         _updateRewardsPerToken();
         claiming = _updateUserRewards(msg.sender);
-        rewards[msg.sender].accumulated = 0; // A Claimed event implies the rewards were set to zero
+        rewards[msg.sender].accumulated = 0;
         rewardsToken.transfer(to, claiming);
         emit Claimed(to, claiming);
     }

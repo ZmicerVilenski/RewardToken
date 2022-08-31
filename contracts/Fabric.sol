@@ -12,6 +12,13 @@ contract Fabric {
         address predictedAddress
     );
 
+    /**
+     * @notice Create new Autostake Token on deterministic address
+     * @param _salt A set of bytes, selecting this parameter, you can calculate the desired deployment address
+     * @param _name New Token name
+     * @param _symbol New Token symbol
+     * @param _txFeeAddress address for transactions fee
+     */
     function createAutostakeToken(
         bytes32 _salt,
         string calldata _name,
